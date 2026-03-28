@@ -1,0 +1,7 @@
+export enum RegistrationStep {
+  IDENTIFICATION = 'IDENTIFICATION',
+  DOCUMENT = 'DOCUMENT',
+  CONTACT = 'CONTACT',
+  ADDRESS = 'ADDRESS',
+  REVIEW = 'REVIEW',
+}
