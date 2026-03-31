@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { Check, RotateCcw, Mail } from 'lucide-react';
 
 interface SuccessScreenProps {
@@ -45,12 +46,12 @@ export default function SuccessScreen({ name, email, onRestart }: SuccessScreenP
 
       {/* Bottom buttons */}
       <div className="w-full pt-6 space-y-3">
-        <button
-          onClick={() => window.location.href = '/'}
+        <Link
+          href="/"
           className="w-full font-semibold py-4 px-6 rounded-2xl bg-primary-500 hover:bg-primary-600 text-white shadow-lg shadow-primary-500/30 hover:shadow-xl hover:shadow-primary-500/40 transition-all duration-200 text-base"
         >
-          Ir para o Dashboard
-        </button>
+          Voltar ao início
+        </Link>
         {onRestart && (
           <button
             onClick={onRestart}

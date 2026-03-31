@@ -2,9 +2,29 @@
 
 import React, { Suspense, useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { registrationApi, cepApi, Registration } from '@/lib/api';
-import { maskCPF, maskCNPJ, maskPhone, maskCEP, formatCPF, formatCNPJ, formatPhone, formatCEP, isValidCPF, isValidCNPJ } from '@/lib/masks';
-import { ChevronLeft, ChevronRight, User, Building2, Check, Lock, Search, CreditCard, Mail, Pencil, CheckCircle } from 'lucide-react';
+import { registrationApi, cepApi } from '@/lib/api';
+import {
+  maskCPF,
+  maskCNPJ,
+  maskPhone,
+  maskCEP,
+  formatCPF,
+  formatCNPJ,
+  formatPhone,
+  formatCEP,
+} from '@/lib/masks';
+import {
+  ChevronLeft,
+  User,
+  Building2,
+  Check,
+  Lock,
+  Search,
+  CreditCard,
+  Mail,
+  Pencil,
+  CheckCircle,
+} from 'lucide-react';
 import TextInput from '@/components/ui/TextInput';
 import MaskedInput from '@/components/ui/MaskedInput';
 import Button from '@/components/ui/Button';
@@ -43,7 +63,6 @@ function CadastroContent() {
   const [error, setError] = useState('');
   const [completed, setCompleted] = useState(false);
   const [editingFromReview, setEditingFromReview] = useState(false);
-  const [maxStepReached, setMaxStepReached] = useState(0);
 
   // Step 1 - Identification
   const [name, setName] = useState('');
@@ -72,7 +91,7 @@ function CadastroContent() {
 
   const stepToIndex = useCallback((step: string, mfaVerified: boolean): number => {
     switch (step) {
-      case 'IDENTIFICATION': return mfaVerified ? 2 : 0;
+      case 'IDENTIFICATION': return mfaVerified ? 2 : 1;
       case 'DOCUMENT': return 2;
       case 'CONTACT': return 3;
       case 'ADDRESS': return 4;
@@ -81,10 +100,6 @@ function CadastroContent() {
     }
   }, []);
 
-  useEffect(() => {
-    setMaxStepReached(prev => Math.max(prev, currentStep));
-  }, [currentStep]);
-
   const loadRegistration = useCallback(async (id: string) => {
     try {
       const res = await registrationApi.findOne(id);
@@ -92,6 +107,7 @@ function CadastroContent() {
       setRegistrationId(reg.id);
       setName(reg.name || '');
       setEmail(reg.email || '');
+      setMfaVerified(reg.mfaVerified);
 
       if (reg.status === 'COMPLETED') {
         setCompleted(true);
@@ -133,11 +149,6 @@ function CadastroContent() {
 
   // Step 1: Create registration (or skip if already created and MFA verified)
   const handleIdentification = async () => {
-    if (!name.trim() || !email.trim()) {
-      setError('Preencha todos os campos');
-      return;
-    }
-    // If registration already exists and MFA is verified, go back to review
     if (registrationId && mfaVerified) {
       setEditingFromReview(false);
       setCurrentStep(5);
@@ -158,10 +169,6 @@ function CadastroContent() {
 
   // Step 2: Verify MFA
   const handleVerifyMfa = async () => {
-    if (!mfaCode.trim() || mfaCode.trim().length !== 6) {
-      setError('Informe o código de 6 dígitos');
-      return;
-    }
     setLoading(true);
     setError('');
     try {
@@ -178,10 +185,6 @@ function CadastroContent() {
   // Step 3: Update document
   const handleDocument = async () => {
     const cleanDoc = document.replace(/\D/g, '');
-    if (!cleanDoc) {
-      setError('Informe o documento');
-      return;
-    }
     setLoading(true);
     setError('');
     try {
@@ -205,10 +208,6 @@ function CadastroContent() {
   // Step 4: Update contact
   const handleContact = async () => {
     const cleanPhone = phone.replace(/\D/g, '');
-    if (!cleanPhone) {
-      setError('Informe o telefone');
-      return;
-    }
     setLoading(true);
     setError('');
     try {
@@ -248,10 +247,6 @@ function CadastroContent() {
   // Step 5: Update address
   const handleAddress = async () => {
     const cleanCep = cep.replace(/\D/g, '');
-    if (!cleanCep || !street.trim() || !number.trim() || !neighborhood.trim() || !city.trim() || !state.trim()) {
-      setError('Preencha todos os campos obrigatórios');
-      return;
-    }
     setLoading(true);
     setError('');
     try {
@@ -294,7 +289,6 @@ function CadastroContent() {
     setCompleted(false);
     setMfaVerified(false);
     setEditingFromReview(false);
-    setMaxStepReached(0);
     setName('');
     setEmail('');
     setMfaCode('');
@@ -364,16 +358,7 @@ function CadastroContent() {
             />
           ))}
         </div>
-        {currentStep < maxStepReached ? (
-          <button
-            onClick={() => setCurrentStep(currentStep + 1)}
-            className="w-10 h-10 flex items-center justify-center rounded-full border border-gray-300 hover:bg-gray-100 transition-colors"
-          >
-            <ChevronRight className="w-6 h-6 text-gray-700" />
-          </button>
-        ) : (
-          <div className="w-10" />
-        )}
+        <div className="w-10" />
       </div>
 
       {error && (
@@ -392,8 +377,6 @@ function CadastroContent() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Seu nome completo"
-              success={name.trim().split(/\s+/).filter(Boolean).length >= 2}
-              error={name.length > 0 && name.trim().split(/\s+/).filter(Boolean).length < 2 ? 'Informe o nome completo (nome e sobrenome)' : undefined}
             />
             <TextInput
               label="E-mail"
@@ -402,8 +385,6 @@ function CadastroContent() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="seu@email.com"
-              success={/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)}
-              error={email.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? 'E-mail inválido' : undefined}
             />
           </div>
         </FormStep>
@@ -501,13 +482,6 @@ function CadastroContent() {
               mask={docType === 'CPF' ? maskCPF : maskCNPJ}
               placeholder={docType === 'CPF' ? '000.000.000-00' : '00.000.000/0000-00'}
               maxLength={docType === 'CPF' ? 14 : 18}
-              success={docType === 'CPF' ? isValidCPF(document) : isValidCNPJ(document)}
-              error={
-                document.replace(/\D/g, '').length === (docType === 'CPF' ? 11 : 14) &&
-                !(docType === 'CPF' ? isValidCPF(document) : isValidCNPJ(document))
-                  ? `${docType} inválido`
-                  : undefined
-              }
             />
           </div>
         </FormStep>
@@ -747,15 +721,6 @@ function CadastroContent() {
           </Button>
         )}
       </div>
-    </div>
-  );
-}
-
-function ReviewItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between items-start gap-4">
-      <span className="text-sm text-gray-500 shrink-0">{label}</span>
-      <span className="text-sm font-medium text-gray-900 text-right">{value}</span>
     </div>
   );
 }
