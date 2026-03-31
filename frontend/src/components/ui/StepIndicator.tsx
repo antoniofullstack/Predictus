@@ -29,7 +29,7 @@ export default function StepIndicator({ steps, currentStep }: StepIndicatorProps
                     isCompleted
                       ? 'bg-green-500 text-white'
                       : isCurrent
-                        ? 'bg-primary-600 text-white ring-4 ring-primary-100'
+                        ? 'bg-primary-500 text-white ring-4 ring-primary-100'
                         : 'bg-gray-200 text-gray-500'
                   }`}
                 >
@@ -41,7 +41,7 @@ export default function StepIndicator({ steps, currentStep }: StepIndicatorProps
                 </div>
                 <span
                   className={`text-xs text-center hidden sm:block ${
-                    isCurrent ? 'text-primary-700 font-semibold' : 'text-gray-400'
+                    isCurrent ? 'text-primary-600 font-semibold' : 'text-gray-400'
                   }`}
                 >
                   {step.label}

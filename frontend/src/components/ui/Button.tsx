@@ -23,12 +23,12 @@ export default function Button({
   fullWidth = true,
 }: ButtonProps) {
   const baseClasses =
-    'font-semibold py-3 px-6 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed';
+    'font-semibold py-4 px-6 rounded-2xl transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-base';
 
   const variantClasses = {
-    primary: 'bg-primary-600 hover:bg-primary-700 text-white shadow-sm hover:shadow-md',
+    primary: 'bg-primary-500 hover:bg-primary-600 text-white shadow-lg shadow-primary-500/30 hover:shadow-xl hover:shadow-primary-500/40',
     secondary: 'bg-gray-200 hover:bg-gray-300 text-gray-800',
-    outline: 'border-2 border-primary-600 text-primary-600 hover:bg-primary-50',
+    outline: 'border-2 border-primary-500 text-primary-500 hover:bg-primary-50',
   };
 
   return (

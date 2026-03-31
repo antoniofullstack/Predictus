@@ -44,6 +44,9 @@ export const registrationApi = {
   verifyMfa: (id: string, code: string) =>
     api.post<Registration>(`/registrations/${id}/verify-mfa`, { code }),
 
+  resendMfa: (id: string) =>
+    api.post<Registration>(`/registrations/${id}/resend-mfa`),
+
   updateDocument: (id: string, data: { documentType: 'CPF' | 'CNPJ'; document: string }) =>
     api.patch<Registration>(`/registrations/${id}/step/document`, data),
 

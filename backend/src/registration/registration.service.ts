@@ -197,7 +197,11 @@ export class RegistrationService {
     const registration = await this.findOneOrFail(id);
     this.ensureMfaVerified(registration);
 
-    if (registration.currentStep !== RegistrationStep.REVIEW) {
+    // Validate all required fields are present
+    if (!registration.name || !registration.email || !registration.document || 
+        !registration.phone || !registration.cep || !registration.street || 
+        !registration.number || !registration.neighborhood || !registration.city || 
+        !registration.state) {
       throw new BadRequestException(
         'Todas as etapas devem ser concluídas antes de finalizar',
       );
@@ -205,6 +209,7 @@ export class RegistrationService {
 
     registration.status = RegistrationStatus.COMPLETED;
     registration.completedAt = new Date();
+    registration.currentStep = RegistrationStep.REVIEW;
 
     const saved = await this.registrationRepository.save(registration);
 

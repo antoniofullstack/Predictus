@@ -1,31 +1,31 @@
 import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class UpdateAddressDto {
-  @IsString()
-  @IsNotEmpty()
+  @IsString({ message: 'CEP deve ser um texto' })
+  @IsNotEmpty({ message: 'CEP é obrigatório' })
   cep: string;
 
-  @IsString()
-  @IsNotEmpty()
+  @IsString({ message: 'Rua deve ser um texto' })
+  @IsNotEmpty({ message: 'Rua é obrigatória' })
   street: string;
 
-  @IsString()
-  @IsNotEmpty()
+  @IsString({ message: 'Número deve ser um texto' })
+  @IsNotEmpty({ message: 'Número é obrigatório' })
   number: string;
 
-  @IsString()
+  @IsString({ message: 'Complemento deve ser um texto' })
   @IsOptional()
   complement?: string;
 
-  @IsString()
-  @IsNotEmpty()
+  @IsString({ message: 'Bairro deve ser um texto' })
+  @IsNotEmpty({ message: 'Bairro é obrigatório' })
   neighborhood: string;
 
-  @IsString()
-  @IsNotEmpty()
+  @IsString({ message: 'Cidade deve ser um texto' })
+  @IsNotEmpty({ message: 'Cidade é obrigatória' })
   city: string;
 
-  @IsString()
-  @IsNotEmpty()
+  @IsString({ message: 'UF deve ser um texto' })
+  @IsNotEmpty({ message: 'UF é obrigatório' })
   state: string;
 }

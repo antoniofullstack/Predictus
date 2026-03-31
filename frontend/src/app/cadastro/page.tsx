@@ -3,11 +3,11 @@
 import React, { Suspense, useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { registrationApi, cepApi, Registration } from '@/lib/api';
-import { maskCPF, maskCNPJ, maskPhone, maskCEP, formatCPF, formatCNPJ, formatPhone, formatCEP } from '@/lib/masks';
+import { maskCPF, maskCNPJ, maskPhone, maskCEP, formatCPF, formatCNPJ, formatPhone, formatCEP, isValidCPF, isValidCNPJ } from '@/lib/masks';
+import { ChevronLeft, ChevronRight, User, Building2, Check, Lock, Search, CreditCard, Mail, Pencil, CheckCircle } from 'lucide-react';
 import TextInput from '@/components/ui/TextInput';
 import MaskedInput from '@/components/ui/MaskedInput';
 import Button from '@/components/ui/Button';
-import StepIndicator from '@/components/ui/StepIndicator';
 import FormStep from '@/components/ui/FormStep';
 import SuccessScreen from '@/components/ui/SuccessScreen';
 
@@ -25,7 +25,7 @@ type DocType = 'CPF' | 'CNPJ';
 export default function CadastroPage() {
   return (
     <Suspense fallback={
-      <div className="w-full max-w-lg mx-auto bg-white rounded-2xl shadow-lg p-6 sm:p-8 flex items-center justify-center min-h-[200px]">
+      <div className="w-full max-w-md mx-auto flex items-center justify-center min-h-screen">
         <div className="w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full animate-spin" />
       </div>
     }>
@@ -42,6 +42,8 @@ function CadastroContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [completed, setCompleted] = useState(false);
+  const [editingFromReview, setEditingFromReview] = useState(false);
+  const [maxStepReached, setMaxStepReached] = useState(0);
 
   // Step 1 - Identification
   const [name, setName] = useState('');
@@ -49,6 +51,7 @@ function CadastroContent() {
 
   // Step 2 - MFA
   const [mfaCode, setMfaCode] = useState('');
+  const [mfaVerified, setMfaVerified] = useState(false);
 
   // Step 3 - Document
   const [docType, setDocType] = useState<DocType>('CPF');
@@ -77,6 +80,10 @@ function CadastroContent() {
       default: return 0;
     }
   }, []);
+
+  useEffect(() => {
+    setMaxStepReached(prev => Math.max(prev, currentStep));
+  }, [currentStep]);
 
   const loadRegistration = useCallback(async (id: string) => {
     try {
@@ -124,10 +131,16 @@ function CadastroContent() {
     }
   };
 
-  // Step 1: Create registration
+  // Step 1: Create registration (or skip if already created and MFA verified)
   const handleIdentification = async () => {
     if (!name.trim() || !email.trim()) {
       setError('Preencha todos os campos');
+      return;
+    }
+    // If registration already exists and MFA is verified, go back to review
+    if (registrationId && mfaVerified) {
+      setEditingFromReview(false);
+      setCurrentStep(5);
       return;
     }
     setLoading(true);
@@ -153,6 +166,7 @@ function CadastroContent() {
     setError('');
     try {
       await registrationApi.verifyMfa(registrationId!, mfaCode.trim());
+      setMfaVerified(true);
       setCurrentStep(2);
     } catch (err: any) {
       handleError(err);
@@ -175,7 +189,12 @@ function CadastroContent() {
         documentType: docType,
         document: cleanDoc,
       });
-      setCurrentStep(3);
+      if (editingFromReview) {
+        setEditingFromReview(false);
+        setCurrentStep(5);
+      } else {
+        setCurrentStep(3);
+      }
     } catch (err: any) {
       handleError(err);
     } finally {
@@ -194,7 +213,12 @@ function CadastroContent() {
     setError('');
     try {
       await registrationApi.updateContact(registrationId!, { phone: cleanPhone });
-      setCurrentStep(4);
+      if (editingFromReview) {
+        setEditingFromReview(false);
+        setCurrentStep(5);
+      } else {
+        setCurrentStep(4);
+      }
     } catch (err: any) {
       handleError(err);
     } finally {
@@ -262,32 +286,105 @@ function CadastroContent() {
     }
   };
 
+  const handleRestart = () => {
+    setCurrentStep(0);
+    setRegistrationId(null);
+    setLoading(false);
+    setError('');
+    setCompleted(false);
+    setMfaVerified(false);
+    setEditingFromReview(false);
+    setMaxStepReached(0);
+    setName('');
+    setEmail('');
+    setMfaCode('');
+    setDocType('CPF');
+    setDocument('');
+    setPhone('');
+    setCep('');
+    setStreet('');
+    setNumber('');
+    setComplement('');
+    setNeighborhood('');
+    setCity('');
+    setState('');
+  };
+
   if (completed) {
     return (
-      <div className="w-full max-w-lg mx-auto bg-white rounded-2xl shadow-lg p-6 sm:p-8">
-        <SuccessScreen name={name} />
+      <div className="w-full max-w-md mx-auto flex flex-col min-h-screen px-6 py-6">
+        <SuccessScreen name={name} email={email} onRestart={handleRestart} />
       </div>
     );
   }
 
+  const handleBack = () => {
+    if (currentStep === 0) {
+      window.history.back();
+    } else {
+      setError('');
+      setCurrentStep(currentStep - 1);
+    }
+  };
+
+  const handleResendMfa = async () => {
+    if (!registrationId) return;
+    setLoading(true);
+    setError('');
+    try {
+      await registrationApi.resendMfa(registrationId);
+      setError('');
+      setMfaCode('');
+    } catch (err: any) {
+      handleError(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const totalSteps = STEPS.length;
+
   return (
-    <div className="w-full max-w-lg mx-auto bg-white rounded-2xl shadow-lg p-6 sm:p-8 space-y-8">
-      <div className="text-center">
-        <h1 className="text-2xl font-bold text-primary-900">Predictus</h1>
-        <p className="text-sm text-gray-400">Cadastro</p>
+    <div className="w-full max-w-md mx-auto flex flex-col min-h-screen px-6 py-6">
+      {/* Header: Back button + Step dots */}
+      <div className="flex items-center justify-between mb-8">
+        <button
+          onClick={handleBack}
+          className="w-10 h-10 flex items-center justify-center rounded-full border border-gray-300 hover:bg-gray-100 transition-colors"
+        >
+          <ChevronLeft className="w-6 h-6 text-gray-700" />
+        </button>
+        <div className="flex items-center gap-2">
+          {STEPS.map((_, i) => (
+            <span
+              key={i}
+              className={`h-2 rounded-full transition-all duration-300 ${
+                i === currentStep ? 'w-8 bg-primary-500' : i < currentStep ? 'w-2 bg-primary-300' : 'w-2 bg-gray-300'
+              }`}
+            />
+          ))}
+        </div>
+        {currentStep < maxStepReached ? (
+          <button
+            onClick={() => setCurrentStep(currentStep + 1)}
+            className="w-10 h-10 flex items-center justify-center rounded-full border border-gray-300 hover:bg-gray-100 transition-colors"
+          >
+            <ChevronRight className="w-6 h-6 text-gray-700" />
+          </button>
+        ) : (
+          <div className="w-10" />
+        )}
       </div>
 
-      <StepIndicator steps={STEPS} currentStep={currentStep} />
-
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
           <p className="text-red-600 text-sm">{error}</p>
         </div>
       )}
 
       {/* Step 1: Identification */}
       {currentStep === 0 && (
-        <FormStep title="Identificação" subtitle="Informe seu nome e e-mail">
+        <FormStep title="Vamos começar com sua identidade" subtitle="Informe seu nome completo e e-mail." stepNumber={1} totalSteps={totalSteps}>
           <div className="space-y-4">
             <TextInput
               label="Nome completo"
@@ -295,6 +392,8 @@ function CadastroContent() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Seu nome completo"
+              success={name.trim().split(/\s+/).filter(Boolean).length >= 2}
+              error={name.length > 0 && name.trim().split(/\s+/).filter(Boolean).length < 2 ? 'Informe o nome completo (nome e sobrenome)' : undefined}
             />
             <TextInput
               label="E-mail"
@@ -303,10 +402,9 @@ function CadastroContent() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="seu@email.com"
+              success={/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)}
+              error={email.length > 0 && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? 'E-mail inválido' : undefined}
             />
-            <Button onClick={handleIdentification} loading={loading}>
-              Continuar
-            </Button>
           </div>
         </FormStep>
       )}
@@ -316,6 +414,8 @@ function CadastroContent() {
         <FormStep
           title="Verificação"
           subtitle={`Enviamos um código de 6 dígitos para ${email}`}
+          stepNumber={2}
+          totalSteps={totalSteps}
         >
           <div className="space-y-4">
             <TextInput
@@ -326,60 +426,96 @@ function CadastroContent() {
               placeholder="000000"
               maxLength={6}
             />
-            <Button onClick={handleVerifyMfa} loading={loading}>
-              Verificar
-            </Button>
+            <button
+              type="button"
+              onClick={handleResendMfa}
+              disabled={loading}
+              className="text-sm font-medium text-primary-500 hover:text-primary-600 transition-colors disabled:opacity-50"
+            >
+              Reenviar código
+            </button>
           </div>
         </FormStep>
       )}
 
       {/* Step 3: Document */}
       {currentStep === 2 && (
-        <FormStep title="Documento" subtitle="Informe seu CPF ou CNPJ">
-          <div className="space-y-4">
-            <div className="flex gap-2">
+        <FormStep title="Verificação de identidade" subtitle="Escolha o tipo de documento para continuar o cadastro." stepNumber={3} totalSteps={totalSteps}>
+          <div className="space-y-5">
+            <p className="text-sm font-medium text-gray-700">Tipo de documento</p>
+            <div className="space-y-3">
               <button
                 type="button"
                 onClick={() => { setDocType('CPF'); setDocument(''); }}
-                className={`flex-1 py-2 px-4 rounded-xl font-medium text-sm transition-colors ${
+                className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 transition-all ${
                   docType === 'CPF'
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    ? 'border-primary-500 bg-primary-50'
+                    : 'border-gray-200 bg-white hover:border-gray-300'
                 }`}
               >
-                CPF
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${
+                  docType === 'CPF' ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-500'
+                }`}>
+                  <User className="w-5 h-5" />
+                </div>
+                <div className="text-left flex-1">
+                  <p className="font-semibold text-primary-900">Pessoa Física (CPF)</p>
+                  <p className="text-sm text-gray-500">Para contas individuais</p>
+                </div>
+                {docType === 'CPF' && (
+                  <div className="w-6 h-6 bg-primary-500 rounded-full flex items-center justify-center shrink-0">
+                    <Check className="w-4 h-4 text-white" />
+                  </div>
+                )}
               </button>
               <button
                 type="button"
                 onClick={() => { setDocType('CNPJ'); setDocument(''); }}
-                className={`flex-1 py-2 px-4 rounded-xl font-medium text-sm transition-colors ${
+                className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 transition-all ${
                   docType === 'CNPJ'
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    ? 'border-primary-500 bg-primary-50'
+                    : 'border-gray-200 bg-white hover:border-gray-300'
                 }`}
               >
-                CNPJ
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${
+                  docType === 'CNPJ' ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-500'
+                }`}>
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div className="text-left flex-1">
+                  <p className="font-semibold text-primary-900">Pessoa Jurídica (CNPJ)</p>
+                  <p className="text-sm text-gray-500">Para contas empresariais</p>
+                </div>
+                {docType === 'CNPJ' && (
+                  <div className="w-6 h-6 bg-primary-500 rounded-full flex items-center justify-center shrink-0">
+                    <Check className="w-4 h-4 text-white" />
+                  </div>
+                )}
               </button>
             </div>
             <MaskedInput
-              label={docType}
+              label={`Número do ${docType}`}
               name="document"
               value={document}
               onChange={(e) => setDocument(e.target.value)}
               mask={docType === 'CPF' ? maskCPF : maskCNPJ}
               placeholder={docType === 'CPF' ? '000.000.000-00' : '00.000.000/0000-00'}
               maxLength={docType === 'CPF' ? 14 : 18}
+              success={docType === 'CPF' ? isValidCPF(document) : isValidCNPJ(document)}
+              error={
+                document.replace(/\D/g, '').length === (docType === 'CPF' ? 11 : 14) &&
+                !(docType === 'CPF' ? isValidCPF(document) : isValidCNPJ(document))
+                  ? `${docType} inválido`
+                  : undefined
+              }
             />
-            <Button onClick={handleDocument} loading={loading}>
-              Continuar
-            </Button>
           </div>
         </FormStep>
       )}
 
       {/* Step 4: Contact */}
       {currentStep === 3 && (
-        <FormStep title="Contato" subtitle="Informe seu telefone celular">
+        <FormStep title="Contato" subtitle="Informe seu telefone celular." stepNumber={4} totalSteps={totalSteps}>
           <div className="space-y-4">
             <MaskedInput
               label="Telefone celular"
@@ -390,114 +526,227 @@ function CadastroContent() {
               placeholder="(11) 99999-9999"
               maxLength={15}
             />
-            <Button onClick={handleContact} loading={loading}>
-              Continuar
-            </Button>
+          </div>
+          <div className="mt-8 bg-primary-50 rounded-xl p-4 flex items-start gap-3">
+            <Lock className="w-5 h-5 text-primary-500 shrink-0 mt-0.5" />
+            <p className="text-sm text-gray-600 leading-relaxed">
+              Usaremos isso para proteger sua conta. Seu número nunca será compartilhado com terceiros sem sua permissão.
+            </p>
           </div>
         </FormStep>
       )}
 
       {/* Step 5: Address */}
       {currentStep === 4 && (
-        <FormStep title="Endereço" subtitle="Informe seu endereço completo">
-          <div className="space-y-4">
-            <div className="flex gap-3">
-              <div className="flex-1">
-                <MaskedInput
-                  label="CEP"
+        <FormStep title="Endereço" subtitle="Informe seu endereço residencial. Utilizado para conformidade e segurança da conta." stepNumber={5} totalSteps={totalSteps}>
+          <div className="space-y-5">
+            {/* CEP field with search icon */}
+            <div className="space-y-1.5">
+              <label htmlFor="cep" className="block text-sm font-medium text-gray-700">CEP</label>
+              <div className="relative">
+                <input
+                  id="cep"
                   name="cep"
+                  type="text"
                   value={cep}
                   onChange={(e) => {
-                    setCep(e.target.value);
-                    handleCepLookup(e.target.value);
+                    const masked = maskCEP(e.target.value);
+                    setCep(masked);
+                    handleCepLookup(masked);
                   }}
-                  mask={maskCEP}
                   placeholder="00000-000"
                   maxLength={9}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-300 hover:border-gray-400 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 />
+                {cepLoading ? (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <div className="w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : (
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                )}
               </div>
-              {cepLoading && (
-                <div className="flex items-end pb-3">
-                  <div className="w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+
+            {/* Grouped address card */}
+            <div className="border border-gray-200 rounded-2xl p-4 space-y-4">
+              <TextInput
+                label="Rua"
+                name="street"
+                value={street}
+                onChange={(e) => setStreet(e.target.value)}
+                placeholder="Avenida Paulista"
+              />
+              <div className="flex gap-3">
+                <div className="w-[30%]">
+                  <TextInput
+                    label="Número"
+                    name="number"
+                    value={number}
+                    onChange={(e) => setNumber(e.target.value)}
+                    placeholder="1000"
+                  />
                 </div>
-              )}
-            </div>
-            <TextInput
-              label="Rua"
-              name="street"
-              value={street}
-              onChange={(e) => setStreet(e.target.value)}
-              placeholder="Rua, Avenida..."
-            />
-            <div className="grid grid-cols-2 gap-3">
-              <TextInput
-                label="Número"
-                name="number"
-                value={number}
-                onChange={(e) => setNumber(e.target.value)}
-                placeholder="123"
-              />
-              <TextInput
-                label="Complemento"
-                name="complement"
-                value={complement}
-                onChange={(e) => setComplement(e.target.value)}
-                placeholder="Apto, Bloco..."
-              />
-            </div>
-            <TextInput
-              label="Bairro"
-              name="neighborhood"
-              value={neighborhood}
-              onChange={(e) => setNeighborhood(e.target.value)}
-              placeholder="Bairro"
-            />
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-2">
-                <TextInput
-                  label="Cidade"
-                  name="city"
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  placeholder="Cidade"
-                />
+                <div className="w-[70%]">
+                  <TextInput
+                    label="Complemento (Opcional)"
+                    name="complement"
+                    value={complement}
+                    onChange={(e) => setComplement(e.target.value)}
+                    placeholder="Apto 42"
+                  />
+                </div>
               </div>
               <TextInput
-                label="UF"
-                name="state"
-                value={state}
-                onChange={(e) => setState(e.target.value)}
-                placeholder="SP"
-                maxLength={2}
+                label="Bairro"
+                name="neighborhood"
+                value={neighborhood}
+                onChange={(e) => setNeighborhood(e.target.value)}
+                placeholder="Bela Vista"
               />
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2">
+                  <TextInput
+                    label="Cidade"
+                    name="city"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    placeholder="São Paulo"
+                  />
+                </div>
+                <TextInput
+                  label="UF"
+                  name="state"
+                  value={state}
+                  onChange={(e) => setState(e.target.value)}
+                  placeholder="SP"
+                  maxLength={2}
+                />
+              </div>
             </div>
-            <Button onClick={handleAddress} loading={loading}>
-              Continuar
-            </Button>
           </div>
         </FormStep>
       )}
 
       {/* Step 6: Review */}
       {currentStep === 5 && (
-        <FormStep title="Revisão" subtitle="Confira seus dados antes de concluir">
-          <div className="space-y-4">
-            <div className="bg-gray-50 rounded-xl p-4 space-y-3">
-              <ReviewItem label="Nome" value={name} />
-              <ReviewItem label="E-mail" value={email} />
-              <ReviewItem label={docType} value={document} />
-              <ReviewItem label="Telefone" value={phone} />
-              <ReviewItem label="CEP" value={cep} />
-              <ReviewItem label="Endereço" value={`${street}, ${number}${complement ? ` - ${complement}` : ''}`} />
-              <ReviewItem label="Bairro" value={neighborhood} />
-              <ReviewItem label="Cidade/UF" value={`${city} / ${state}`} />
+        <FormStep title="Revisão" subtitle="Verifique suas informações antes de criar sua conta." stepNumber={6} totalSteps={totalSteps}>
+          <div className="space-y-5">
+            {/* Identification Card */}
+            <div className="border border-gray-200 rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-primary-100 rounded-lg flex items-center justify-center">
+                    <CreditCard className="w-4 h-4 text-primary-500" />
+                  </div>
+                  <span className="font-semibold text-primary-900">Identificação</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setEditingFromReview(true); setCurrentStep(0); }}
+                  className="flex items-center gap-1 text-sm font-medium text-primary-500 hover:text-primary-600 transition-colors"
+                >
+                  Editar <Pencil className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Nome completo</p>
+                    <p className="text-sm font-medium text-gray-900 mt-0.5">{name}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">{docType}</p>
+                    <p className="text-sm font-medium text-gray-900 mt-0.5">{document}</p>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Endereço</p>
+                  <p className="text-sm font-medium text-gray-900 mt-0.5">
+                    {street}, {number}{complement ? ` - ${complement}` : ''}, {neighborhood}, {city}/{state} - {cep}
+                  </p>
+                </div>
+              </div>
             </div>
-            <Button onClick={handleComplete} loading={loading}>
-              Concluir Cadastro
-            </Button>
+
+            {/* Contact Card */}
+            <div className="border border-gray-200 rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-primary-100 rounded-lg flex items-center justify-center">
+                    <Mail className="w-4 h-4 text-primary-500" />
+                  </div>
+                  <span className="font-semibold text-primary-900">Contato</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setEditingFromReview(true); setCurrentStep(3); }}
+                  className="flex items-center gap-1 text-sm font-medium text-primary-500 hover:text-primary-600 transition-colors"
+                >
+                  Editar <Pencil className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">E-mail</p>
+                  <p className="text-sm font-medium text-gray-900 mt-0.5 flex items-center gap-1.5">
+                    {email} <CheckCircle className="w-4 h-4 text-primary-500" />
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Telefone</p>
+                  <p className="text-sm font-medium text-gray-900 mt-0.5 flex items-center gap-1.5">
+                    {phone} <CheckCircle className="w-4 h-4 text-primary-500" />
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </FormStep>
       )}
+
+      {/* Spacer */}
+      <div className="flex-1" />
+
+      {/* Bottom: Action button + Security footer */}
+      <div className="pt-6">
+        {currentStep === 0 && (
+          <Button onClick={handleIdentification} loading={loading}>
+            Continuar
+          </Button>
+        )}
+        {currentStep === 1 && (
+          mfaVerified ? (
+            <Button onClick={() => setCurrentStep(2)}>
+              Avançar
+            </Button>
+          ) : (
+            <Button onClick={handleVerifyMfa} loading={loading}>
+              Verificar
+            </Button>
+          )
+        )}
+        {currentStep === 2 && (
+          <Button onClick={handleDocument} loading={loading}>
+            Continuar
+          </Button>
+        )}
+        {currentStep === 3 && (
+          <Button onClick={handleContact} loading={loading}>
+            Continuar
+          </Button>
+        )}
+        {currentStep === 4 && (
+          <Button onClick={handleAddress} loading={loading}>
+            Continuar
+          </Button>
+        )}
+        {currentStep === 5 && (
+          <Button onClick={handleComplete} loading={loading} variant="outline">
+            Criar Conta
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
