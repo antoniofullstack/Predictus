@@ -33,6 +33,11 @@ export class RegistrationController {
     return this.registrationService.verifyMfa(id, dto);
   }
 
+  @Post(':id/resend-mfa')
+  resendMfa(@Param('id', ParseUUIDPipe) id: string) {
+    return this.registrationService.resendMfa(id);
+  }
+
   @Patch(':id/step/document')
   updateDocument(
     @Param('id', ParseUUIDPipe) id: string,

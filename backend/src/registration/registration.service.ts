@@ -75,7 +75,7 @@ export class RegistrationService {
       const saved = await this.registrationRepository.save(existing);
 
       // Send MFA code
-      await this.emailProvider.sendMfaCode(dto.email, mfaCode);
+      await this.sendMfaCodeSafely(dto.email, mfaCode);
 
       return saved;
     }
@@ -91,7 +91,7 @@ export class RegistrationService {
     const saved = await this.registrationRepository.save(registration);
 
     // Send MFA code
-    await this.emailProvider.sendMfaCode(dto.email, mfaCode);
+    await this.sendMfaCodeSafely(dto.email, mfaCode);
 
     return saved;
   }
@@ -111,6 +111,22 @@ export class RegistrationService {
     registration.currentStep = RegistrationStep.DOCUMENT;
 
     return this.registrationRepository.save(registration);
+  }
+
+  async resendMfa(id: string): Promise<{ message: string }> {
+    const registration = await this.findOneOrFail(id);
+
+    if (registration.mfaVerified) {
+      throw new BadRequestException('MFA já verificado');
+    }
+
+    const mfaCode = generateMfaCode();
+    registration.mfaCode = mfaCode;
+    await this.registrationRepository.save(registration);
+
+    await this.sendMfaCodeSafely(registration.email, mfaCode);
+
+    return { message: 'Código reenviado com sucesso' };
   }
 
   async updateDocument(
@@ -190,7 +206,11 @@ export class RegistrationService {
     registration.status = RegistrationStatus.COMPLETED;
     registration.completedAt = new Date();
 
-    return this.registrationRepository.save(registration);
+    const saved = await this.registrationRepository.save(registration);
+
+    await this.sendConfirmationEmailSafely(registration.email, registration.name);
+
+    return saved;
   }
 
   async findOne(id: string): Promise<Registration> {
@@ -207,6 +227,34 @@ export class RegistrationService {
     }
 
     return registration;
+  }
+
+  private async sendMfaCodeSafely(
+    email: string,
+    code: string,
+  ): Promise<void> {
+    try {
+      await this.emailProvider.sendMfaCode(email, code);
+    } catch (error) {
+      this.logger.error(
+        `Failed to send MFA code to ${email}. Registration was saved but email was not delivered.`,
+        error?.stack || error,
+      );
+    }
+  }
+
+  private async sendConfirmationEmailSafely(
+    email: string,
+    name: string,
+  ): Promise<void> {
+    try {
+      await this.emailProvider.sendConfirmationEmail(email, name);
+    } catch (error) {
+      this.logger.error(
+        `Failed to send confirmation email to ${email}. Registration was completed but email was not delivered.`,
+        error?.stack || error,
+      );
+    }
   }
 
   private ensureMfaVerified(registration: Registration): void {

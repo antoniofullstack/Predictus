@@ -30,6 +30,7 @@ const mockRepository = {
 
 const mockEmailProvider = {
   sendMfaCode: jest.fn().mockResolvedValue(undefined),
+  sendConfirmationEmail: jest.fn().mockResolvedValue(undefined),
   sendAbandonmentReminder: jest.fn().mockResolvedValue(undefined),
 };
 
@@ -215,6 +216,10 @@ describe('RegistrationService', () => {
 
       expect(result.status).toBe(RegistrationStatus.COMPLETED);
       expect(result.completedAt).toBeDefined();
+      expect(mockEmailProvider.sendConfirmationEmail).toHaveBeenCalledWith(
+        'test@example.com',
+        'Test User',
+      );
     });
 
     it('should reject completion if not at REVIEW step', async () => {

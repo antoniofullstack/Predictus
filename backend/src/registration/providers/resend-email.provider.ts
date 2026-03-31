@@ -39,6 +39,28 @@ export class ResendEmailProvider implements EmailProvider {
     }
   }
 
+  async sendConfirmationEmail(email: string, name: string): Promise<void> {
+    try {
+      await this.resend.emails.send({
+        from: this.from,
+        to: email,
+        subject: 'Cadastro confirmado - Predictus',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #1a1a2e;">Cadastro Concluído!</h2>
+            <p>Parabéns, <strong>${name}</strong>! Seu cadastro foi realizado com sucesso.</p>
+            <p>Agora você já pode acessar a plataforma Predictus e aproveitar todos os recursos disponíveis.</p>
+            <p style="color: #666; font-size: 12px;">Se você não realizou este cadastro, entre em contato conosco imediatamente.</p>
+          </div>
+        `,
+      });
+      this.logger.log(`Confirmation email sent to ${email}`);
+    } catch (error) {
+      this.logger.error(`Failed to send confirmation email to ${email}`, error);
+      throw error;
+    }
+  }
+
   async sendAbandonmentReminder(
     email: string,
     name: string,
