@@ -26,10 +26,7 @@ export class RegistrationController {
   }
 
   @Post(':id/verify-mfa')
-  verifyMfa(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: VerifyMfaDto,
-  ) {
+  verifyMfa(@Param('id', ParseUUIDPipe) id: string, @Body() dto: VerifyMfaDto) {
     return this.registrationService.verifyMfa(id, dto);
   }
 

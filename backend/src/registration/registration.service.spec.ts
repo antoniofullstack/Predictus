@@ -22,8 +22,14 @@ const mockRegistration: Partial<Registration> = {
 };
 
 const mockRepository = {
-  create: jest.fn().mockImplementation((dto) => ({ ...mockRegistration, ...dto })),
-  save: jest.fn().mockImplementation((entity) => Promise.resolve({ ...mockRegistration, ...entity })),
+  create: jest
+    .fn()
+    .mockImplementation((dto) => ({ ...mockRegistration, ...dto })),
+  save: jest
+    .fn()
+    .mockImplementation((entity) =>
+      Promise.resolve({ ...mockRegistration, ...entity }),
+    ),
   findOne: jest.fn(),
   find: jest.fn().mockResolvedValue([]),
 };
@@ -81,7 +87,13 @@ describe('RegistrationService', () => {
     });
 
     it('should replace an existing IN_PROGRESS registration', async () => {
-      mockRepository.findOne.mockResolvedValue({ ...mockRegistration });
+      mockRepository.findOne.mockResolvedValue({
+        ...mockRegistration,
+        documentType: DocumentType.CPF,
+        document: '52998224725',
+        phone: '11999998888',
+        currentStep: RegistrationStep.CONTACT,
+      });
 
       const result = await service.create({
         name: 'New Name',
@@ -91,6 +103,34 @@ describe('RegistrationService', () => {
       expect(mockRepository.save).toHaveBeenCalled();
       expect(mockEmailProvider.sendMfaCode).toHaveBeenCalled();
       expect(result.name).toBe('New Name');
+      expect(result.document).toBe('52998224725');
+      expect(result.phone).toBe('11999998888');
+      expect(result.currentStep).toBe(RegistrationStep.IDENTIFICATION);
+      expect(result.mfaVerified).toBe(false);
+    });
+
+    it('should reuse an abandoned registration instead of creating a new one', async () => {
+      mockRepository.findOne.mockResolvedValue({
+        ...mockRegistration,
+        status: RegistrationStatus.ABANDONED,
+        documentType: DocumentType.CPF,
+        document: '52998224725',
+      });
+
+      const result = await service.create({
+        name: 'Test User',
+        email: 'test@example.com',
+      });
+
+      expect(mockRepository.create).not.toHaveBeenCalled();
+      expect(mockRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'test-uuid',
+          status: RegistrationStatus.IN_PROGRESS,
+          document: '52998224725',
+        }),
+      );
+      expect(result.id).toBe('test-uuid');
     });
   });
 
@@ -137,6 +177,7 @@ describe('RegistrationService', () => {
       mockRepository.findOne.mockResolvedValue({
         ...mockRegistration,
         mfaVerified: true,
+        currentStep: RegistrationStep.DOCUMENT,
       });
 
       const result = await service.updateDocument('test-uuid', {
@@ -152,6 +193,7 @@ describe('RegistrationService', () => {
       mockRepository.findOne.mockResolvedValue({
         ...mockRegistration,
         mfaVerified: true,
+        currentStep: RegistrationStep.DOCUMENT,
       });
 
       await expect(
@@ -175,6 +217,21 @@ describe('RegistrationService', () => {
         }),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('should reject document update outside of the expected step', async () => {
+      mockRepository.findOne.mockResolvedValue({
+        ...mockRegistration,
+        mfaVerified: true,
+        currentStep: RegistrationStep.CONTACT,
+      });
+
+      await expect(
+        service.updateDocument('test-uuid', {
+          documentType: DocumentType.CPF,
+          document: '529.982.247-25',
+        }),
+      ).rejects.toThrow('As etapas do cadastro devem ser concluídas em ordem.');
+    });
   });
 
   describe('updateContact', () => {
@@ -182,6 +239,7 @@ describe('RegistrationService', () => {
       mockRepository.findOne.mockResolvedValue({
         ...mockRegistration,
         mfaVerified: true,
+        currentStep: RegistrationStep.CONTACT,
       });
 
       const result = await service.updateContact('test-uuid', {
@@ -196,11 +254,28 @@ describe('RegistrationService', () => {
       mockRepository.findOne.mockResolvedValue({
         ...mockRegistration,
         mfaVerified: true,
+        currentStep: RegistrationStep.CONTACT,
       });
 
       await expect(
         service.updateContact('test-uuid', { phone: '1133334444' }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should resume an abandoned registration when continuing the flow', async () => {
+      mockRepository.findOne.mockResolvedValue({
+        ...mockRegistration,
+        mfaVerified: true,
+        status: RegistrationStatus.ABANDONED,
+        currentStep: RegistrationStep.CONTACT,
+      });
+
+      const result = await service.updateContact('test-uuid', {
+        phone: '(11) 99999-8888',
+      });
+
+      expect(result.status).toBe(RegistrationStatus.IN_PROGRESS);
+      expect(result.currentStep).toBe(RegistrationStep.ADDRESS);
     });
   });
 
@@ -210,6 +285,15 @@ describe('RegistrationService', () => {
         ...mockRegistration,
         mfaVerified: true,
         currentStep: RegistrationStep.REVIEW,
+        documentType: DocumentType.CPF,
+        document: '52998224725',
+        phone: '11999998888',
+        cep: '01001000',
+        street: 'Praca da Se',
+        number: '100',
+        neighborhood: 'Centro',
+        city: 'Sao Paulo',
+        state: 'SP',
       });
 
       const result = await service.complete('test-uuid');
@@ -227,10 +311,44 @@ describe('RegistrationService', () => {
         ...mockRegistration,
         mfaVerified: true,
         currentStep: RegistrationStep.CONTACT,
+        documentType: DocumentType.CPF,
+        document: '52998224725',
+        phone: '11999998888',
+        cep: '01001000',
+        street: 'Praca da Se',
+        number: '100',
+        neighborhood: 'Centro',
+        city: 'Sao Paulo',
+        state: 'SP',
       });
 
       await expect(service.complete('test-uuid')).rejects.toThrow(
-        BadRequestException,
+        'A revisão do cadastro é obrigatória antes da conclusão.',
+      );
+    });
+  });
+
+  describe('handleAbandonmentCheck', () => {
+    it('should send reminder even when MFA is still pending', async () => {
+      mockRepository.find.mockResolvedValue([
+        {
+          ...mockRegistration,
+          mfaVerified: false,
+          status: RegistrationStatus.IN_PROGRESS,
+        },
+      ]);
+
+      await service.handleAbandonmentCheck();
+
+      expect(mockEmailProvider.sendAbandonmentReminder).toHaveBeenCalledWith(
+        'test@example.com',
+        'Test User',
+        'http://localhost:3000/cadastro?id=test-uuid',
+      );
+      expect(mockRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: RegistrationStatus.ABANDONED,
+        }),
       );
     });
   });

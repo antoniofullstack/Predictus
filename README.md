@@ -126,8 +126,9 @@ A suíte do backend cobre:
 - **Componentização:** inputs, botões e formulários são componentes reutilizáveis.
 - **Mobile-first:** layout responsivo com TailwindCSS.
 - **Abstração de providers:** interfaces `EmailProvider` e `CepProvider` permitem trocar fornecedores sem impacto na lógica.
-- **Persistência incremental:** cada etapa persiste no banco imediatamente.
-- **Cron de abandono:** a cada 10 minutos verifica registros sem atualização e envia e-mail de lembrete com link de retomada para `/cadastro?id=<registrationId>`.
+- **Persistência incremental:** cada etapa persiste no banco imediatamente e reutiliza o mesmo rascunho incompleto para o mesmo e-mail, preservando os dados já preenchidos.
+- **Fluxo sequencial no backend:** as etapas são validadas no servidor para impedir avanço fora de ordem, mantendo o frontend apenas como consumidor dos serviços.
+- **Cron de abandono:** a cada 10 minutos verifica registros sem atualização, envia e-mail de lembrete com link de retomada para `/cadastro?id=<registrationId>` e marca o rascunho como abandonado até nova interação.
 
 ## Tecnologias
 

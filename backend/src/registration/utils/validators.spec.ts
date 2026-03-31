@@ -67,7 +67,9 @@ describe('Validators', () => {
     });
 
     it('should generate different codes', () => {
-      const codes = new Set(Array.from({ length: 10 }, () => generateMfaCode()));
+      const codes = new Set(
+        Array.from({ length: 10 }, () => generateMfaCode()),
+      );
       expect(codes.size).toBeGreaterThan(1);
     });
   });

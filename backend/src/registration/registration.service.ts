@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan } from 'typeorm';
+import { Repository, LessThan, In } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Registration } from './entities/registration.entity';
@@ -44,37 +44,31 @@ export class RegistrationService {
   ) {}
 
   async create(dto: CreateRegistrationDto): Promise<Registration> {
-    // Check if there's an existing IN_PROGRESS registration with this email
     const existing = await this.registrationRepository.findOne({
       where: {
         email: dto.email,
-        status: RegistrationStatus.IN_PROGRESS,
+        status: In([
+          RegistrationStatus.IN_PROGRESS,
+          RegistrationStatus.ABANDONED,
+        ]),
+      },
+      order: {
+        updatedAt: 'DESC',
       },
     });
 
     const mfaCode = generateMfaCode();
 
     if (existing) {
-      // Replace the existing registration
       existing.name = dto.name;
       existing.email = dto.email;
       existing.mfaCode = mfaCode;
       existing.mfaVerified = false;
       existing.currentStep = RegistrationStep.IDENTIFICATION;
-      existing.document = null;
-      existing.documentType = null;
-      existing.phone = null;
-      existing.cep = null;
-      existing.street = null;
-      existing.number = null;
-      existing.complement = null;
-      existing.neighborhood = null;
-      existing.city = null;
-      existing.state = null;
+      existing.status = RegistrationStatus.IN_PROGRESS;
 
       const saved = await this.registrationRepository.save(existing);
 
-      // Send MFA code
       await this.sendMfaCodeSafely(dto.email, mfaCode);
 
       return saved;
@@ -90,7 +84,6 @@ export class RegistrationService {
 
     const saved = await this.registrationRepository.save(registration);
 
-    // Send MFA code
     await this.sendMfaCodeSafely(dto.email, mfaCode);
 
     return saved;
@@ -98,6 +91,9 @@ export class RegistrationService {
 
   async verifyMfa(id: string, dto: VerifyMfaDto): Promise<Registration> {
     const registration = await this.findOneOrFail(id);
+    this.ensureRegistrationIsEditable(registration);
+    this.resumeRegistration(registration);
+    this.ensureCurrentStep(registration, RegistrationStep.IDENTIFICATION);
 
     if (registration.mfaVerified) {
       throw new BadRequestException('MFA já verificado');
@@ -115,6 +111,9 @@ export class RegistrationService {
 
   async resendMfa(id: string): Promise<{ message: string }> {
     const registration = await this.findOneOrFail(id);
+    this.ensureRegistrationIsEditable(registration);
+    this.resumeRegistration(registration);
+    this.ensureCurrentStep(registration, RegistrationStep.IDENTIFICATION);
 
     if (registration.mfaVerified) {
       throw new BadRequestException('MFA já verificado');
@@ -134,7 +133,12 @@ export class RegistrationService {
     dto: UpdateDocumentDto,
   ): Promise<Registration> {
     const registration = await this.findOneOrFail(id);
+    this.ensureRegistrationIsEditable(registration);
+    this.resumeRegistration(registration);
     this.ensureMfaVerified(registration);
+    this.ensureCurrentStep(registration, RegistrationStep.DOCUMENT, {
+      allowReview: true,
+    });
 
     const cleanDoc = dto.document.replace(/\D/g, '');
 
@@ -148,7 +152,10 @@ export class RegistrationService {
 
     registration.documentType = dto.documentType;
     registration.document = cleanDoc;
-    registration.currentStep = RegistrationStep.CONTACT;
+    registration.currentStep =
+      registration.currentStep === RegistrationStep.REVIEW
+        ? RegistrationStep.REVIEW
+        : RegistrationStep.CONTACT;
 
     return this.registrationRepository.save(registration);
   }
@@ -158,7 +165,12 @@ export class RegistrationService {
     dto: UpdateContactDto,
   ): Promise<Registration> {
     const registration = await this.findOneOrFail(id);
+    this.ensureRegistrationIsEditable(registration);
+    this.resumeRegistration(registration);
     this.ensureMfaVerified(registration);
+    this.ensureCurrentStep(registration, RegistrationStep.CONTACT, {
+      allowReview: true,
+    });
 
     const cleanPhone = dto.phone.replace(/\D/g, '');
 
@@ -169,7 +181,10 @@ export class RegistrationService {
     }
 
     registration.phone = cleanPhone;
-    registration.currentStep = RegistrationStep.ADDRESS;
+    registration.currentStep =
+      registration.currentStep === RegistrationStep.REVIEW
+        ? RegistrationStep.REVIEW
+        : RegistrationStep.ADDRESS;
 
     return this.registrationRepository.save(registration);
   }
@@ -179,7 +194,12 @@ export class RegistrationService {
     dto: UpdateAddressDto,
   ): Promise<Registration> {
     const registration = await this.findOneOrFail(id);
+    this.ensureRegistrationIsEditable(registration);
+    this.resumeRegistration(registration);
     this.ensureMfaVerified(registration);
+    this.ensureCurrentStep(registration, RegistrationStep.ADDRESS, {
+      allowReview: true,
+    });
 
     registration.cep = dto.cep.replace(/\D/g, '');
     registration.street = dto.street;
@@ -195,13 +215,27 @@ export class RegistrationService {
 
   async complete(id: string): Promise<Registration> {
     const registration = await this.findOneOrFail(id);
+    this.ensureRegistrationIsEditable(registration);
+    this.resumeRegistration(registration);
     this.ensureMfaVerified(registration);
+    this.ensureCurrentStep(registration, RegistrationStep.REVIEW, {
+      message: 'A revisão do cadastro é obrigatória antes da conclusão.',
+    });
 
     // Validate all required fields are present
-    if (!registration.name || !registration.email || !registration.document || 
-        !registration.phone || !registration.cep || !registration.street || 
-        !registration.number || !registration.neighborhood || !registration.city || 
-        !registration.state) {
+    if (
+      !registration.name ||
+      !registration.email ||
+      !registration.documentType ||
+      !registration.document ||
+      !registration.phone ||
+      !registration.cep ||
+      !registration.street ||
+      !registration.number ||
+      !registration.neighborhood ||
+      !registration.city ||
+      !registration.state
+    ) {
       throw new BadRequestException(
         'Todas as etapas devem ser concluídas antes de finalizar',
       );
@@ -213,7 +247,10 @@ export class RegistrationService {
 
     const saved = await this.registrationRepository.save(registration);
 
-    await this.sendConfirmationEmailSafely(registration.email, registration.name);
+    await this.sendConfirmationEmailSafely(
+      registration.email,
+      registration.name,
+    );
 
     return saved;
   }
@@ -234,10 +271,7 @@ export class RegistrationService {
     return registration;
   }
 
-  private async sendMfaCodeSafely(
-    email: string,
-    code: string,
-  ): Promise<void> {
+  private async sendMfaCodeSafely(email: string, code: string): Promise<void> {
     try {
       await this.emailProvider.sendMfaCode(email, code);
     } catch (error) {
@@ -270,6 +304,40 @@ export class RegistrationService {
     }
   }
 
+  private ensureRegistrationIsEditable(registration: Registration): void {
+    if (registration.status === RegistrationStatus.COMPLETED) {
+      throw new BadRequestException(
+        'Cadastro já concluído e não pode ser alterado',
+      );
+    }
+  }
+
+  private resumeRegistration(registration: Registration): void {
+    if (registration.status === RegistrationStatus.ABANDONED) {
+      registration.status = RegistrationStatus.IN_PROGRESS;
+    }
+  }
+
+  private ensureCurrentStep(
+    registration: Registration,
+    expectedStep: RegistrationStep,
+    options?: {
+      allowReview?: boolean;
+      message?: string;
+    },
+  ): void {
+    const allowedSteps = options?.allowReview
+      ? [expectedStep, RegistrationStep.REVIEW]
+      : [expectedStep];
+
+    if (!allowedSteps.includes(registration.currentStep)) {
+      throw new BadRequestException(
+        options?.message ||
+          'As etapas do cadastro devem ser concluídas em ordem.',
+      );
+    }
+  }
+
   @Cron(CronExpression.EVERY_10_MINUTES)
   async handleAbandonmentCheck(): Promise<void> {
     const abandonmentMinutes = this.configService.get<number>(
@@ -287,19 +355,16 @@ export class RegistrationService {
     const abandoned = await this.registrationRepository.find({
       where: {
         status: RegistrationStatus.IN_PROGRESS,
-        mfaVerified: true,
         updatedAt: LessThan(threshold),
       },
     });
 
     for (const registration of abandoned) {
-      this.logger.log(
-        `Sending abandonment reminder to ${registration.email}`,
-      );
+      this.logger.log(`Sending abandonment reminder to ${registration.email}`);
 
       const resumeLink = `${frontendUrl}/cadastro?id=${registration.id}`;
 
-      await this.emailProvider.sendAbandonmentReminder(
+      await this.sendAbandonmentReminderSafely(
         registration.email,
         registration.name,
         resumeLink,
@@ -311,8 +376,21 @@ export class RegistrationService {
     }
 
     if (abandoned.length > 0) {
-      this.logger.log(
-        `Processed ${abandoned.length} abandoned registrations`,
+      this.logger.log(`Processed ${abandoned.length} abandoned registrations`);
+    }
+  }
+
+  private async sendAbandonmentReminderSafely(
+    email: string,
+    name: string,
+    resumeLink: string,
+  ): Promise<void> {
+    try {
+      await this.emailProvider.sendAbandonmentReminder(email, name, resumeLink);
+    } catch (error) {
+      this.logger.error(
+        `Failed to send abandonment reminder to ${email}.`,
+        error?.stack || error,
       );
     }
   }
