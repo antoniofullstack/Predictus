@@ -32,6 +32,13 @@ Isso cria um container PostgreSQL na porta `5432` com:
 
 ### 2. Configurar Variáveis de Ambiente
 
+Copie os arquivos de exemplo e ajuste os valores se necessário:
+
+```bash
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env.local
+```
+
 **Backend** (`backend/.env`):
 ```env
 DATABASE_HOST=localhost
@@ -81,7 +88,7 @@ Abra **http://localhost:3000** no navegador e clique em "Iniciar Cadastro".
 | Etapa | Descrição |
 |-------|-----------|
 | 1. Identificação | Nome + E-mail |
-| 2. Verificação MFA | Código de 6 dígitos enviado por e-mail |
+| 2. Verificação MFA | Código de 6 dígitos enviado por e-mail, com opção de reenvio |
 | 3. Documento | CPF ou CNPJ (com validação) |
 | 4. Contato | Telefone celular (formato brasileiro) |
 | 5. Endereço | CEP (auto-preenchido via ViaCEP) + campos manuais |
@@ -93,6 +100,7 @@ Abra **http://localhost:3000** no navegador e clique em "Iniciar Cadastro".
 |--------|------|-----------|
 | POST | `/api/registrations` | Cria registro (nome + e-mail), envia MFA |
 | POST | `/api/registrations/:id/verify-mfa` | Verifica código MFA |
+| POST | `/api/registrations/:id/resend-mfa` | Reenvia um novo código MFA |
 | PATCH | `/api/registrations/:id/step/document` | Atualiza CPF/CNPJ |
 | PATCH | `/api/registrations/:id/step/contact` | Atualiza telefone |
 | PATCH | `/api/registrations/:id/step/address` | Atualiza endereço |
@@ -107,9 +115,9 @@ cd backend
 npm test
 ```
 
-29 testes cobrindo:
+A suíte do backend cobre:
 - Validação de CPF, CNPJ e telefone
-- Fluxo completo do `RegistrationService`
+- Fluxo do `RegistrationService`, incluindo MFA, etapas do cadastro e finalização
 - Provider `ViaCepProvider` (com mock)
 
 ## Arquitetura
@@ -119,11 +127,11 @@ npm test
 - **Mobile-first:** layout responsivo com TailwindCSS.
 - **Abstração de providers:** interfaces `EmailProvider` e `CepProvider` permitem trocar fornecedores sem impacto na lógica.
 - **Persistência incremental:** cada etapa persiste no banco imediatamente.
-- **Cron de abandono:** a cada 10 minutos verifica registros sem atualização e envia e-mail de lembrete.
+- **Cron de abandono:** a cada 10 minutos verifica registros sem atualização e envia e-mail de lembrete com link de retomada para `/cadastro?id=<registrationId>`.
 
 ## Tecnologias
 
-- **Frontend:** Next.js 14, React 18, TailwindCSS, Lucide Icons, Axios
+- **Frontend:** Next.js 14, React 18, TailwindCSS, Lucide Icons, Axios, react-input-mask
 - **Backend:** Nest.js 10, TypeORM, PostgreSQL, class-validator, Resend SDK
 - **Testes:** Jest
 - **Infra:** Docker Compose (PostgreSQL)
