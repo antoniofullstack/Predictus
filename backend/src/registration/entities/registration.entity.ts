@@ -21,34 +21,34 @@ export class Registration {
   email: string;
 
   @Column({ type: 'enum', enum: DocumentType, nullable: true })
-  documentType: DocumentType | null;
+  documentType: DocumentType;
+
+  @Column({ type: 'varchar', nullable: true })
+  document: string;
 
   @Column({ nullable: true })
-  document: string | null;
+  phone: string;
 
   @Column({ nullable: true })
-  phone: string | null;
+  cep: string;
 
   @Column({ nullable: true })
-  cep: string | null;
+  street: string;
 
   @Column({ nullable: true })
-  street: string | null;
+  number: string;
 
   @Column({ nullable: true })
-  number: string | null;
+  complement: string;
 
   @Column({ nullable: true })
-  complement: string | null;
+  neighborhood: string;
 
   @Column({ nullable: true })
-  neighborhood: string | null;
+  city: string;
 
   @Column({ nullable: true })
-  city: string | null;
-
-  @Column({ nullable: true })
-  state: string | null;
+  state: string;
 
   @Column({
     type: 'enum',
@@ -74,7 +74,7 @@ export class Registration {
   startedAt: Date;
 
   @Column({ type: 'timestamp', nullable: true })
-  completedAt: Date | null;
+  completedAt: Date;
 
   @UpdateDateColumn()
   updatedAt: Date;
