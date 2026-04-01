@@ -1,8 +1,9 @@
 'use client';
 
 import React from 'react';
-import Link from 'next/link';
 import { Check, RotateCcw, Mail } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import Button from './Button';
 
 interface SuccessScreenProps {
   name: string;
@@ -11,6 +12,8 @@ interface SuccessScreenProps {
 }
 
 export default function SuccessScreen({ name, email, onRestart }: SuccessScreenProps) {
+  const router = useRouter();
+
   return (
     <div className="flex flex-col items-center w-full flex-1">
       {/* Large green checkmark */}
@@ -46,12 +49,9 @@ export default function SuccessScreen({ name, email, onRestart }: SuccessScreenP
 
       {/* Bottom buttons */}
       <div className="w-full pt-6 space-y-3">
-        <Link
-          href="/"
-          className="w-full font-semibold py-4 px-6 rounded-2xl bg-primary-500 hover:bg-primary-600 text-white shadow-lg shadow-primary-500/30 hover:shadow-xl hover:shadow-primary-500/40 transition-all duration-200 text-base"
-        >
+        <Button onClick={() => router.push('/')}>
           Voltar ao início
-        </Link>
+        </Button>
         {onRestart && (
           <button
             onClick={onRestart}

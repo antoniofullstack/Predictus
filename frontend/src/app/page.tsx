@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight } from 'lucide-react';
+import Button from '@/components/ui/Button';
 
 function PredictusLogo() {
   return (
@@ -34,9 +34,8 @@ export default function Home() {
 
       <div className="flex-1" />
 
-      <Link href="/cadastro" className="flex items-center justify-center gap-2 w-full bg-primary-500 hover:bg-primary-600 text-white font-semibold py-4 px-6 rounded-full transition-colors mb-4">
-        Criar cadastro
-        <ArrowRight className="w-5 h-5" />
+      <Link href="/cadastro" className="mb-4 block">
+        <Button> Criar cadastro </Button>
       </Link>
 
       <p className="text-center text-xs text-gray-400 pb-4">

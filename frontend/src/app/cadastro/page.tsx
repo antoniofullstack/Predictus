@@ -2,7 +2,7 @@
 
 import React, { Suspense, useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { registrationApi, cepApi } from '@/lib/api';
+import { registrationApi, cepApi, type Registration } from '@/lib/api';
 import {
   maskCPF,
   maskCNPJ,
@@ -21,9 +21,9 @@ import {
   Lock,
   Search,
   CreditCard,
-  Mail,
+  Phone,
+  MapPin,
   Pencil,
-  CheckCircle,
 } from 'lucide-react';
 import TextInput from '@/components/ui/TextInput';
 import MaskedInput from '@/components/ui/MaskedInput';
@@ -62,7 +62,6 @@ function CadastroContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [completed, setCompleted] = useState(false);
-  const [editingFromReview, setEditingFromReview] = useState(false);
 
   // Step 1 - Identification
   const [name, setName] = useState('');
@@ -100,36 +99,42 @@ function CadastroContent() {
     }
   }, []);
 
+  const applyRegistrationState = useCallback((reg: Registration) => {
+    setRegistrationId(reg.id);
+    setName(reg.name || '');
+    setEmail(reg.email || '');
+    setMfaVerified(reg.mfaVerified);
+    setDocType(reg.documentType || 'CPF');
+    setDocument(
+      reg.document
+        ? reg.documentType === 'CNPJ'
+          ? formatCNPJ(reg.document)
+          : formatCPF(reg.document)
+        : '',
+    );
+    setPhone(reg.phone ? formatPhone(reg.phone) : '');
+    setCep(reg.cep ? formatCEP(reg.cep) : '');
+    setStreet(reg.street || '');
+    setNumber(reg.number || '');
+    setComplement(reg.complement || '');
+    setNeighborhood(reg.neighborhood || '');
+    setCity(reg.city || '');
+    setState(reg.state || '');
+    setCompleted(reg.status === 'COMPLETED');
+
+    if (reg.status !== 'COMPLETED') {
+      setCurrentStep(stepToIndex(reg.currentStep, reg.mfaVerified));
+    }
+  }, [stepToIndex]);
+
   const loadRegistration = useCallback(async (id: string) => {
     try {
       const res = await registrationApi.findOne(id);
-      const reg = res.data;
-      setRegistrationId(reg.id);
-      setName(reg.name || '');
-      setEmail(reg.email || '');
-      setMfaVerified(reg.mfaVerified);
-
-      if (reg.status === 'COMPLETED') {
-        setCompleted(true);
-        return;
-      }
-
-      if (reg.documentType) setDocType(reg.documentType);
-      if (reg.document) setDocument(reg.documentType === 'CPF' ? formatCPF(reg.document) : formatCNPJ(reg.document));
-      if (reg.phone) setPhone(formatPhone(reg.phone));
-      if (reg.cep) setCep(formatCEP(reg.cep));
-      if (reg.street) setStreet(reg.street);
-      if (reg.number) setNumber(reg.number);
-      if (reg.complement) setComplement(reg.complement);
-      if (reg.neighborhood) setNeighborhood(reg.neighborhood);
-      if (reg.city) setCity(reg.city);
-      if (reg.state) setState(reg.state);
-
-      setCurrentStep(stepToIndex(reg.currentStep, reg.mfaVerified));
+      applyRegistrationState(res.data);
     } catch {
       // Registration not found, start fresh
     }
-  }, [stepToIndex]);
+  }, [applyRegistrationState]);
 
   useEffect(() => {
     const id = searchParams.get('id');
@@ -147,19 +152,18 @@ function CadastroContent() {
     }
   };
 
-  // Step 1: Create registration (or skip if already created and MFA verified)
+  // Step 1: Create or update identification
   const handleIdentification = async () => {
-    if (registrationId && mfaVerified) {
-      setEditingFromReview(false);
-      setCurrentStep(5);
-      return;
-    }
     setLoading(true);
     setError('');
     try {
-      const res = await registrationApi.create({ name: name.trim(), email: email.trim() });
-      setRegistrationId(res.data.id);
-      setCurrentStep(1);
+      const payload = { name: name.trim(), email: email.trim() };
+      const res = registrationId
+        ? await registrationApi.updateIdentification(registrationId, payload)
+        : await registrationApi.create(payload);
+
+      setMfaCode('');
+      applyRegistrationState(res.data);
     } catch (err: any) {
       handleError(err);
     } finally {
@@ -172,9 +176,9 @@ function CadastroContent() {
     setLoading(true);
     setError('');
     try {
-      await registrationApi.verifyMfa(registrationId!, mfaCode.trim());
-      setMfaVerified(true);
-      setCurrentStep(2);
+      const res = await registrationApi.verifyMfa(registrationId!, mfaCode.trim());
+      setMfaCode('');
+      applyRegistrationState(res.data);
     } catch (err: any) {
       handleError(err);
     } finally {
@@ -188,16 +192,11 @@ function CadastroContent() {
     setLoading(true);
     setError('');
     try {
-      await registrationApi.updateDocument(registrationId!, {
+      const res = await registrationApi.updateDocument(registrationId!, {
         documentType: docType,
         document: cleanDoc,
       });
-      if (editingFromReview) {
-        setEditingFromReview(false);
-        setCurrentStep(5);
-      } else {
-        setCurrentStep(3);
-      }
+      applyRegistrationState(res.data);
     } catch (err: any) {
       handleError(err);
     } finally {
@@ -211,13 +210,8 @@ function CadastroContent() {
     setLoading(true);
     setError('');
     try {
-      await registrationApi.updateContact(registrationId!, { phone: cleanPhone });
-      if (editingFromReview) {
-        setEditingFromReview(false);
-        setCurrentStep(5);
-      } else {
-        setCurrentStep(4);
-      }
+      const res = await registrationApi.updateContact(registrationId!, { phone: cleanPhone });
+      applyRegistrationState(res.data);
     } catch (err: any) {
       handleError(err);
     } finally {
@@ -250,7 +244,7 @@ function CadastroContent() {
     setLoading(true);
     setError('');
     try {
-      await registrationApi.updateAddress(registrationId!, {
+      const res = await registrationApi.updateAddress(registrationId!, {
         cep: cleanCep,
         street: street.trim(),
         number: number.trim(),
@@ -259,7 +253,7 @@ function CadastroContent() {
         city: city.trim(),
         state: state.trim(),
       });
-      setCurrentStep(5);
+      applyRegistrationState(res.data);
     } catch (err: any) {
       handleError(err);
     } finally {
@@ -272,8 +266,8 @@ function CadastroContent() {
     setLoading(true);
     setError('');
     try {
-      await registrationApi.complete(registrationId!);
-      setCompleted(true);
+      const res = await registrationApi.complete(registrationId!);
+      applyRegistrationState(res.data);
     } catch (err: any) {
       handleError(err);
     } finally {
@@ -288,7 +282,6 @@ function CadastroContent() {
     setError('');
     setCompleted(false);
     setMfaVerified(false);
-    setEditingFromReview(false);
     setName('');
     setEmail('');
     setMfaCode('');
@@ -611,34 +604,51 @@ function CadastroContent() {
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 bg-primary-100 rounded-lg flex items-center justify-center">
-                    <CreditCard className="w-4 h-4 text-primary-500" />
+                    <User className="w-4 h-4 text-primary-500" />
                   </div>
                   <span className="font-semibold text-primary-900">Identificação</span>
                 </div>
                 <button
                   type="button"
-                  onClick={() => { setEditingFromReview(true); setCurrentStep(0); }}
+                  onClick={() => setCurrentStep(0)}
                   className="flex items-center gap-1 text-sm font-medium text-primary-500 hover:text-primary-600 transition-colors"
                 >
                   Editar <Pencil className="w-3.5 h-3.5" />
                 </button>
               </div>
               <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Nome completo</p>
-                    <p className="text-sm font-medium text-gray-900 mt-0.5">{name}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">{docType}</p>
-                    <p className="text-sm font-medium text-gray-900 mt-0.5">{document}</p>
-                  </div>
+                <div>
+                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Nome completo</p>
+                  <p className="text-sm font-medium text-gray-900 mt-0.5">{name}</p>
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Endereço</p>
-                  <p className="text-sm font-medium text-gray-900 mt-0.5">
-                    {street}, {number}{complement ? ` - ${complement}` : ''}, {neighborhood}, {city}/{state} - {cep}
-                  </p>
+                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">E-mail</p>
+                  <p className="text-sm font-medium text-gray-900 mt-0.5">{email}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Document Card */}
+            <div className="border border-gray-200 rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-primary-100 rounded-lg flex items-center justify-center">
+                    <CreditCard className="w-4 h-4 text-primary-500" />
+                  </div>
+                  <span className="font-semibold text-primary-900">Documento</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(2)}
+                  className="flex items-center gap-1 text-sm font-medium text-primary-500 hover:text-primary-600 transition-colors"
+                >
+                  Editar <Pencil className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">{docType}</p>
+                  <p className="text-sm font-medium text-gray-900 mt-0.5">{document}</p>
                 </div>
               </div>
             </div>
@@ -648,13 +658,13 @@ function CadastroContent() {
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 bg-primary-100 rounded-lg flex items-center justify-center">
-                    <Mail className="w-4 h-4 text-primary-500" />
+                    <Phone className="w-4 h-4 text-primary-500" />
                   </div>
                   <span className="font-semibold text-primary-900">Contato</span>
                 </div>
                 <button
                   type="button"
-                  onClick={() => { setEditingFromReview(true); setCurrentStep(3); }}
+                  onClick={() => setCurrentStep(3)}
                   className="flex items-center gap-1 text-sm font-medium text-primary-500 hover:text-primary-600 transition-colors"
                 >
                   Editar <Pencil className="w-3.5 h-3.5" />
@@ -662,15 +672,34 @@ function CadastroContent() {
               </div>
               <div className="space-y-3">
                 <div>
-                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">E-mail</p>
-                  <p className="text-sm font-medium text-gray-900 mt-0.5 flex items-center gap-1.5">
-                    {email} <CheckCircle className="w-4 h-4 text-primary-500" />
-                  </p>
-                </div>
-                <div>
                   <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Telefone</p>
-                  <p className="text-sm font-medium text-gray-900 mt-0.5 flex items-center gap-1.5">
-                    {phone} <CheckCircle className="w-4 h-4 text-primary-500" />
+                  <p className="text-sm font-medium text-gray-900 mt-0.5">{phone}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Address Card */}
+            <div className="border border-gray-200 rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-primary-100 rounded-lg flex items-center justify-center">
+                    <MapPin className="w-4 h-4 text-primary-500" />
+                  </div>
+                  <span className="font-semibold text-primary-900">Endereço</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(4)}
+                  className="flex items-center gap-1 text-sm font-medium text-primary-500 hover:text-primary-600 transition-colors"
+                >
+                  Editar <Pencil className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Endereço</p>
+                  <p className="text-sm font-medium text-gray-900 mt-0.5">
+                    {street}, {number}{complement ? ` - ${complement}` : ''}, {neighborhood}, {city}/{state} - {cep}
                   </p>
                 </div>
               </div>
@@ -717,7 +746,7 @@ function CadastroContent() {
         )}
         {currentStep === 5 && (
           <Button onClick={handleComplete} loading={loading} variant="outline">
-            Criar Conta
+            Finalizar Cadastro
           </Button>
         )}
       </div>
