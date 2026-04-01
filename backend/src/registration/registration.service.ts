@@ -16,6 +16,7 @@ import { DocumentType } from './enums/document-type.enum';
 import {
   CreateRegistrationDto,
   VerifyMfaDto,
+  UpdateIdentificationDto,
   UpdateDocumentDto,
   UpdateContactDto,
   UpdateAddressDto,
@@ -104,7 +105,7 @@ export class RegistrationService {
     }
 
     registration.mfaVerified = true;
-    registration.currentStep = RegistrationStep.DOCUMENT;
+    registration.currentStep = this.getStepAfterMfaVerification(registration);
 
     return this.registrationRepository.save(registration);
   }
@@ -126,6 +127,44 @@ export class RegistrationService {
     await this.sendMfaCodeSafely(registration.email, mfaCode);
 
     return { message: 'Código reenviado com sucesso' };
+  }
+
+  async updateIdentification(
+    id: string,
+    dto: UpdateIdentificationDto,
+  ): Promise<Registration> {
+    const registration = await this.findOneOrFail(id);
+    this.ensureRegistrationIsEditable(registration);
+    this.resumeRegistration(registration);
+    this.ensureCurrentStep(registration, RegistrationStep.IDENTIFICATION, {
+      allowReview: true,
+    });
+
+    const emailChanged = registration.email !== dto.email;
+
+    registration.name = dto.name;
+    registration.email = dto.email;
+
+    if (emailChanged) {
+      const mfaCode = generateMfaCode();
+      registration.mfaCode = mfaCode;
+      registration.mfaVerified = false;
+      registration.currentStep = RegistrationStep.IDENTIFICATION;
+
+      const saved = await this.registrationRepository.save(registration);
+
+      await this.sendMfaCodeSafely(dto.email, mfaCode);
+
+      return saved;
+    }
+
+    registration.currentStep =
+      registration.currentStep === RegistrationStep.REVIEW &&
+      registration.mfaVerified
+        ? RegistrationStep.REVIEW
+        : RegistrationStep.IDENTIFICATION;
+
+    return this.registrationRepository.save(registration);
   }
 
   async updateDocument(
@@ -336,6 +375,31 @@ export class RegistrationService {
           'As etapas do cadastro devem ser concluídas em ordem.',
       );
     }
+  }
+
+  private getStepAfterMfaVerification(
+    registration: Registration,
+  ): RegistrationStep {
+    if (!registration.documentType || !registration.document) {
+      return RegistrationStep.DOCUMENT;
+    }
+
+    if (!registration.phone) {
+      return RegistrationStep.CONTACT;
+    }
+
+    if (
+      !registration.cep ||
+      !registration.street ||
+      !registration.number ||
+      !registration.neighborhood ||
+      !registration.city ||
+      !registration.state
+    ) {
+      return RegistrationStep.ADDRESS;
+    }
+
+    return RegistrationStep.REVIEW;
   }
 
   @Cron(CronExpression.EVERY_10_MINUTES)

@@ -11,6 +11,7 @@ import { RegistrationService } from './registration.service';
 import {
   CreateRegistrationDto,
   VerifyMfaDto,
+  UpdateIdentificationDto,
   UpdateDocumentDto,
   UpdateContactDto,
   UpdateAddressDto,
@@ -33,6 +34,14 @@ export class RegistrationController {
   @Post(':id/resend-mfa')
   resendMfa(@Param('id', ParseUUIDPipe) id: string) {
     return this.registrationService.resendMfa(id);
+  }
+
+  @Patch(':id/step/identification')
+  updateIdentification(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateIdentificationDto,
+  ) {
+    return this.registrationService.updateIdentification(id, dto);
   }
 
   @Patch(':id/step/document')

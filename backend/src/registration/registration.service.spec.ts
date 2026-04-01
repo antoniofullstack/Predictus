@@ -148,6 +148,30 @@ describe('RegistrationService', () => {
       expect(result.currentStep).toBe(RegistrationStep.DOCUMENT);
     });
 
+    it('should return to REVIEW after re-verifying an edited email', async () => {
+      mockRepository.findOne.mockResolvedValue({
+        ...mockRegistration,
+        email: 'novo@example.com',
+        mfaCode: '123456',
+        mfaVerified: false,
+        currentStep: RegistrationStep.IDENTIFICATION,
+        documentType: DocumentType.CPF,
+        document: '52998224725',
+        phone: '11999998888',
+        cep: '01001000',
+        street: 'Praca da Se',
+        number: '100',
+        neighborhood: 'Centro',
+        city: 'Sao Paulo',
+        state: 'SP',
+      });
+
+      const result = await service.verifyMfa('test-uuid', { code: '123456' });
+
+      expect(result.mfaVerified).toBe(true);
+      expect(result.currentStep).toBe(RegistrationStep.REVIEW);
+    });
+
     it('should reject wrong MFA code', async () => {
       mockRepository.findOne.mockResolvedValue({
         ...mockRegistration,
@@ -169,6 +193,47 @@ describe('RegistrationService', () => {
       await expect(
         service.verifyMfa('test-uuid', { code: '123456' }),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('updateIdentification', () => {
+    it('should keep REVIEW when only the name changes', async () => {
+      mockRepository.findOne.mockResolvedValue({
+        ...mockRegistration,
+        mfaVerified: true,
+        currentStep: RegistrationStep.REVIEW,
+      });
+
+      const result = await service.updateIdentification('test-uuid', {
+        name: 'Updated User',
+        email: 'test@example.com',
+      });
+
+      expect(result.name).toBe('Updated User');
+      expect(result.mfaVerified).toBe(true);
+      expect(result.currentStep).toBe(RegistrationStep.REVIEW);
+      expect(mockEmailProvider.sendMfaCode).not.toHaveBeenCalled();
+    });
+
+    it('should require a new MFA verification when the email changes', async () => {
+      mockRepository.findOne.mockResolvedValue({
+        ...mockRegistration,
+        mfaVerified: true,
+        currentStep: RegistrationStep.REVIEW,
+      });
+
+      const result = await service.updateIdentification('test-uuid', {
+        name: 'Test User',
+        email: 'novo@example.com',
+      });
+
+      expect(result.email).toBe('novo@example.com');
+      expect(result.mfaVerified).toBe(false);
+      expect(result.currentStep).toBe(RegistrationStep.IDENTIFICATION);
+      expect(mockEmailProvider.sendMfaCode).toHaveBeenCalledWith(
+        'novo@example.com',
+        expect.any(String),
+      );
     });
   });
 

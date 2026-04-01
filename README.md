@@ -101,6 +101,7 @@ Abra **http://localhost:3000** no navegador e clique em "Iniciar Cadastro".
 | POST | `/api/registrations` | Cria registro (nome + e-mail), envia MFA |
 | POST | `/api/registrations/:id/verify-mfa` | Verifica código MFA |
 | POST | `/api/registrations/:id/resend-mfa` | Reenvia um novo código MFA |
+| PATCH | `/api/registrations/:id/step/identification` | Atualiza nome/e-mail; ao trocar o e-mail, um novo MFA é enviado |
 | PATCH | `/api/registrations/:id/step/document` | Atualiza CPF/CNPJ |
 | PATCH | `/api/registrations/:id/step/contact` | Atualiza telefone |
 | PATCH | `/api/registrations/:id/step/address` | Atualiza endereço |
