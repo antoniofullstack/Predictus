@@ -15,6 +15,11 @@ export class ResendEmailProvider implements EmailProvider {
   }
 
   async sendMfaCode(email: string, code: string): Promise<void> {
+    const expirationMinutes = this.configService.get(
+      'MFA_EXPIRATION_MINUTES',
+      10,
+    );
+
     try {
       await this.resend.emails.send({
         from: this.from,
@@ -27,7 +32,7 @@ export class ResendEmailProvider implements EmailProvider {
             <div style="background: #f0f0f5; padding: 16px; border-radius: 8px; text-align: center; margin: 20px 0;">
               <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #1a1a2e;">${code}</span>
             </div>
-            <p style="color: #666;">Este código expira em 10 minutos.</p>
+            <p style="color: #666;">Este código expira em ${expirationMinutes} minutos.</p>
             <p style="color: #666; font-size: 12px;">Se você não solicitou este código, ignore este e-mail.</p>
           </div>
         `,

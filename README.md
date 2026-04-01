@@ -50,6 +50,7 @@ DATABASE_NAME=predictus
 RESEND_API_KEY=re_SUA_CHAVE_AQUI
 EMAIL_FROM=onboarding@resend.dev
 
+MFA_EXPIRATION_MINUTES=10
 ABANDONMENT_MINUTES=30
 FRONTEND_URL=http://localhost:3000
 ```
@@ -129,6 +130,7 @@ A suíte do backend cobre:
 - **Abstração de providers:** interfaces `EmailProvider` e `CepProvider` permitem trocar fornecedores sem impacto na lógica.
 - **Persistência incremental:** cada etapa persiste no banco imediatamente e reutiliza o mesmo rascunho incompleto para o mesmo e-mail, preservando os dados já preenchidos.
 - **Fluxo sequencial no backend:** as etapas são validadas no servidor para impedir avanço fora de ordem, mantendo o frontend apenas como consumidor dos serviços.
+- **MFA com expiração real:** cada código recebe um prazo de validade configurável por `MFA_EXPIRATION_MINUTES`; códigos expirados exigem reenvio.
 - **Cron de abandono:** a cada 10 minutos verifica registros sem atualização, envia e-mail de lembrete com link de retomada para `/cadastro?id=<registrationId>` e marca o rascunho como abandonado até nova interação.
 
 ## Tecnologias

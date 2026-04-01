@@ -65,7 +65,10 @@ export class Registration {
   status: RegistrationStatus;
 
   @Column({ nullable: true })
-  mfaCode: string;
+  mfaCode: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  mfaExpiresAt: Date | null;
 
   @Column({ default: false })
   mfaVerified: boolean;

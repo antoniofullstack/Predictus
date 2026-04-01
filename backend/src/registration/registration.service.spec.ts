@@ -14,6 +14,7 @@ const mockRegistration: Partial<Registration> = {
   name: 'Test User',
   email: 'test@example.com',
   mfaCode: '123456',
+  mfaExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
   mfaVerified: false,
   currentStep: RegistrationStep.IDENTIFICATION,
   status: RegistrationStatus.IN_PROGRESS,
@@ -43,6 +44,7 @@ const mockEmailProvider = {
 const mockConfigService = {
   get: jest.fn().mockImplementation((key: string, defaultVal?: any) => {
     const config: Record<string, any> = {
+      MFA_EXPIRATION_MINUTES: 10,
       ABANDONMENT_MINUTES: 30,
       FRONTEND_URL: 'http://localhost:3000',
     };
@@ -84,6 +86,7 @@ describe('RegistrationService', () => {
         expect.any(String),
       );
       expect(result.email).toBe('test@example.com');
+      expect(result).not.toHaveProperty('mfaCode');
     });
 
     it('should replace an existing IN_PROGRESS registration', async () => {
@@ -107,6 +110,7 @@ describe('RegistrationService', () => {
       expect(result.phone).toBe('11999998888');
       expect(result.currentStep).toBe(RegistrationStep.IDENTIFICATION);
       expect(result.mfaVerified).toBe(false);
+      expect(result).not.toHaveProperty('mfaCode');
     });
 
     it('should reuse an abandoned registration instead of creating a new one', async () => {
@@ -132,6 +136,26 @@ describe('RegistrationService', () => {
       );
       expect(result.id).toBe('test-uuid');
     });
+
+    it('should persist a real MFA expiration timestamp when creating a registration', async () => {
+      mockRepository.findOne.mockResolvedValue(null);
+
+      const before = Date.now();
+      await service.create({
+        name: 'Test User',
+        email: 'test@example.com',
+      });
+      const after = Date.now();
+
+      const savedRegistration = mockRepository.save.mock.calls[0][0];
+      expect(savedRegistration.mfaExpiresAt).toBeInstanceOf(Date);
+      expect(savedRegistration.mfaExpiresAt.getTime()).toBeGreaterThanOrEqual(
+        before + 10 * 60 * 1000,
+      );
+      expect(savedRegistration.mfaExpiresAt.getTime()).toBeLessThanOrEqual(
+        after + 10 * 60 * 1000,
+      );
+    });
   });
 
   describe('verifyMfa', () => {
@@ -146,6 +170,14 @@ describe('RegistrationService', () => {
 
       expect(result.mfaVerified).toBe(true);
       expect(result.currentStep).toBe(RegistrationStep.DOCUMENT);
+      expect(result).not.toHaveProperty('mfaCode');
+      expect(mockRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mfaVerified: true,
+          mfaCode: null,
+          mfaExpiresAt: null,
+        }),
+      );
     });
 
     it('should return to REVIEW after re-verifying an edited email', async () => {
@@ -182,6 +214,19 @@ describe('RegistrationService', () => {
       await expect(
         service.verifyMfa('test-uuid', { code: '000000' }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should reject expired MFA code', async () => {
+      mockRepository.findOne.mockResolvedValue({
+        ...mockRegistration,
+        mfaCode: '123456',
+        mfaVerified: false,
+        mfaExpiresAt: new Date(Date.now() - 1_000),
+      });
+
+      await expect(
+        service.verifyMfa('test-uuid', { code: '123456' }),
+      ).rejects.toThrow('Código de verificação expirado. Solicite um novo código');
     });
 
     it('should reject if MFA already verified', async () => {
@@ -233,6 +278,12 @@ describe('RegistrationService', () => {
       expect(mockEmailProvider.sendMfaCode).toHaveBeenCalledWith(
         'novo@example.com',
         expect.any(String),
+      );
+      expect(mockRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: 'novo@example.com',
+          mfaExpiresAt: expect.any(Date),
+        }),
       );
     });
   });
@@ -424,6 +475,7 @@ describe('RegistrationService', () => {
 
       const result = await service.findOne('test-uuid');
       expect(result.id).toBe('test-uuid');
+      expect(result).not.toHaveProperty('mfaCode');
     });
 
     it('should throw NotFoundException for non-existent id', async () => {

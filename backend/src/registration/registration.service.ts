@@ -32,6 +32,8 @@ import {
   generateMfaCode,
 } from './utils/validators';
 
+type PublicRegistration = Omit<Registration, 'mfaCode'>;
+
 @Injectable()
 export class RegistrationService {
   private readonly logger = new Logger(RegistrationService.name);
@@ -44,7 +46,7 @@ export class RegistrationService {
     private readonly configService: ConfigService,
   ) {}
 
-  async create(dto: CreateRegistrationDto): Promise<Registration> {
+  async create(dto: CreateRegistrationDto): Promise<PublicRegistration> {
     const existing = await this.registrationRepository.findOne({
       where: {
         email: dto.email,
@@ -58,13 +60,10 @@ export class RegistrationService {
       },
     });
 
-    const mfaCode = generateMfaCode();
-
     if (existing) {
+      const mfaCode = this.assignNewMfaCode(existing);
       existing.name = dto.name;
       existing.email = dto.email;
-      existing.mfaCode = mfaCode;
-      existing.mfaVerified = false;
       existing.currentStep = RegistrationStep.IDENTIFICATION;
       existing.status = RegistrationStatus.IN_PROGRESS;
 
@@ -72,13 +71,16 @@ export class RegistrationService {
 
       await this.sendMfaCodeSafely(dto.email, mfaCode);
 
-      return saved;
+      return this.sanitizeRegistration(saved);
     }
 
+    const registrationWithMfa = new Registration();
+    const mfaCode = this.assignNewMfaCode(registrationWithMfa);
     const registration = this.registrationRepository.create({
       name: dto.name,
       email: dto.email,
-      mfaCode,
+      mfaCode: registrationWithMfa.mfaCode,
+      mfaExpiresAt: registrationWithMfa.mfaExpiresAt,
       currentStep: RegistrationStep.IDENTIFICATION,
       status: RegistrationStatus.IN_PROGRESS,
     });
@@ -87,10 +89,10 @@ export class RegistrationService {
 
     await this.sendMfaCodeSafely(dto.email, mfaCode);
 
-    return saved;
+    return this.sanitizeRegistration(saved);
   }
 
-  async verifyMfa(id: string, dto: VerifyMfaDto): Promise<Registration> {
+  async verifyMfa(id: string, dto: VerifyMfaDto): Promise<PublicRegistration> {
     const registration = await this.findOneOrFail(id);
     this.ensureRegistrationIsEditable(registration);
     this.resumeRegistration(registration);
@@ -100,14 +102,30 @@ export class RegistrationService {
       throw new BadRequestException('MFA já verificado');
     }
 
+    if (!registration.mfaCode || !registration.mfaExpiresAt) {
+      throw new BadRequestException(
+        'Código de verificação expirado. Solicite um novo código',
+      );
+    }
+
+    if (registration.mfaExpiresAt <= new Date()) {
+      throw new BadRequestException(
+        'Código de verificação expirado. Solicite um novo código',
+      );
+    }
+
     if (registration.mfaCode !== dto.code) {
       throw new BadRequestException('Código de verificação inválido');
     }
 
     registration.mfaVerified = true;
+    registration.mfaCode = null;
+    registration.mfaExpiresAt = null;
     registration.currentStep = this.getStepAfterMfaVerification(registration);
 
-    return this.registrationRepository.save(registration);
+    const saved = await this.registrationRepository.save(registration);
+
+    return this.sanitizeRegistration(saved);
   }
 
   async resendMfa(id: string): Promise<{ message: string }> {
@@ -120,8 +138,7 @@ export class RegistrationService {
       throw new BadRequestException('MFA já verificado');
     }
 
-    const mfaCode = generateMfaCode();
-    registration.mfaCode = mfaCode;
+    const mfaCode = this.assignNewMfaCode(registration);
     await this.registrationRepository.save(registration);
 
     await this.sendMfaCodeSafely(registration.email, mfaCode);
@@ -132,7 +149,7 @@ export class RegistrationService {
   async updateIdentification(
     id: string,
     dto: UpdateIdentificationDto,
-  ): Promise<Registration> {
+  ): Promise<PublicRegistration> {
     const registration = await this.findOneOrFail(id);
     this.ensureRegistrationIsEditable(registration);
     this.resumeRegistration(registration);
@@ -146,16 +163,14 @@ export class RegistrationService {
     registration.email = dto.email;
 
     if (emailChanged) {
-      const mfaCode = generateMfaCode();
-      registration.mfaCode = mfaCode;
-      registration.mfaVerified = false;
+      const mfaCode = this.assignNewMfaCode(registration);
       registration.currentStep = RegistrationStep.IDENTIFICATION;
 
       const saved = await this.registrationRepository.save(registration);
 
       await this.sendMfaCodeSafely(dto.email, mfaCode);
 
-      return saved;
+      return this.sanitizeRegistration(saved);
     }
 
     registration.currentStep =
@@ -164,13 +179,15 @@ export class RegistrationService {
         ? RegistrationStep.REVIEW
         : RegistrationStep.IDENTIFICATION;
 
-    return this.registrationRepository.save(registration);
+    const saved = await this.registrationRepository.save(registration);
+
+    return this.sanitizeRegistration(saved);
   }
 
   async updateDocument(
     id: string,
     dto: UpdateDocumentDto,
-  ): Promise<Registration> {
+  ): Promise<PublicRegistration> {
     const registration = await this.findOneOrFail(id);
     this.ensureRegistrationIsEditable(registration);
     this.resumeRegistration(registration);
@@ -196,13 +213,15 @@ export class RegistrationService {
         ? RegistrationStep.REVIEW
         : RegistrationStep.CONTACT;
 
-    return this.registrationRepository.save(registration);
+    const saved = await this.registrationRepository.save(registration);
+
+    return this.sanitizeRegistration(saved);
   }
 
   async updateContact(
     id: string,
     dto: UpdateContactDto,
-  ): Promise<Registration> {
+  ): Promise<PublicRegistration> {
     const registration = await this.findOneOrFail(id);
     this.ensureRegistrationIsEditable(registration);
     this.resumeRegistration(registration);
@@ -225,13 +244,15 @@ export class RegistrationService {
         ? RegistrationStep.REVIEW
         : RegistrationStep.ADDRESS;
 
-    return this.registrationRepository.save(registration);
+    const saved = await this.registrationRepository.save(registration);
+
+    return this.sanitizeRegistration(saved);
   }
 
   async updateAddress(
     id: string,
     dto: UpdateAddressDto,
-  ): Promise<Registration> {
+  ): Promise<PublicRegistration> {
     const registration = await this.findOneOrFail(id);
     this.ensureRegistrationIsEditable(registration);
     this.resumeRegistration(registration);
@@ -249,10 +270,12 @@ export class RegistrationService {
     registration.state = dto.state;
     registration.currentStep = RegistrationStep.REVIEW;
 
-    return this.registrationRepository.save(registration);
+    const saved = await this.registrationRepository.save(registration);
+
+    return this.sanitizeRegistration(saved);
   }
 
-  async complete(id: string): Promise<Registration> {
+  async complete(id: string): Promise<PublicRegistration> {
     const registration = await this.findOneOrFail(id);
     this.ensureRegistrationIsEditable(registration);
     this.resumeRegistration(registration);
@@ -291,11 +314,13 @@ export class RegistrationService {
       registration.name,
     );
 
-    return saved;
+    return this.sanitizeRegistration(saved);
   }
 
-  async findOne(id: string): Promise<Registration> {
-    return this.findOneOrFail(id);
+  async findOne(id: string): Promise<PublicRegistration> {
+    const registration = await this.findOneOrFail(id);
+
+    return this.sanitizeRegistration(registration);
   }
 
   private async findOneOrFail(id: string): Promise<Registration> {
@@ -400,6 +425,32 @@ export class RegistrationService {
     }
 
     return RegistrationStep.REVIEW;
+  }
+
+  private assignNewMfaCode(registration: Registration): string {
+    const mfaCode = generateMfaCode();
+    const mfaExpiresAt = new Date();
+    mfaExpiresAt.setMinutes(
+      mfaExpiresAt.getMinutes() + this.getMfaExpirationMinutes(),
+    );
+
+    registration.mfaCode = mfaCode;
+    registration.mfaExpiresAt = mfaExpiresAt;
+    registration.mfaVerified = false;
+
+    return mfaCode;
+  }
+
+  private getMfaExpirationMinutes(): number {
+    return this.configService.get<number>('MFA_EXPIRATION_MINUTES', 10);
+  }
+
+  private sanitizeRegistration(
+    registration: Registration,
+  ): PublicRegistration {
+    const { mfaCode: _mfaCode, ...publicRegistration } = registration;
+
+    return publicRegistration;
   }
 
   @Cron(CronExpression.EVERY_10_MINUTES)

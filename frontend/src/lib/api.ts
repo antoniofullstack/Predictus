@@ -24,6 +24,7 @@ export interface Registration {
   currentStep: 'IDENTIFICATION' | 'DOCUMENT' | 'CONTACT' | 'ADDRESS' | 'REVIEW';
   status: 'IN_PROGRESS' | 'COMPLETED' | 'ABANDONED';
   mfaVerified: boolean;
+  mfaExpiresAt: string | null;
   startedAt: string;
   completedAt: string | null;
   updatedAt: string;
@@ -45,7 +46,7 @@ export const registrationApi = {
     api.post<Registration>(`/registrations/${id}/verify-mfa`, { code }),
 
   resendMfa: (id: string) =>
-    api.post<Registration>(`/registrations/${id}/resend-mfa`),
+    api.post<{ message: string }>(`/registrations/${id}/resend-mfa`),
 
   updateIdentification: (id: string, data: { name: string; email: string }) =>
     api.patch<Registration>(`/registrations/${id}/step/identification`, data),
