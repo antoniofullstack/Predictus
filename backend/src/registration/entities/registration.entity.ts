@@ -64,7 +64,7 @@ export class Registration {
   })
   status: RegistrationStatus;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   mfaCode: string | null;
 
   @Column({ type: 'timestamp', nullable: true })

@@ -22,7 +22,7 @@ Sistema de cadastro em etapas sequenciais com persistência incremental, verific
 ### 1. Subir o Banco de Dados
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 Isso cria um container PostgreSQL na porta `5432` com:
